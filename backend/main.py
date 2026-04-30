@@ -77,49 +77,89 @@ def summarize_with_gemini(text: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API error: {e}")
 
-@app.post("/transcribe")
-async def transcribe_video(file: UploadFile = File(...)):
-    # Validate file type (optional)
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
+import uuid
+from fastapi import BackgroundTasks
+
+# Store tasks in memory (task_id: {status, progress, result, error})
+tasks = {}
+
+@app.get("/status/{task_id}")
+async def get_status(task_id: str):
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return tasks[task_id]
+
+async def process_video_task(task_id: str, video_bytes: bytes, filename: str):
+    tasks[task_id] = {"status": "processing", "progress": 0, "message": "Iniciando..."}
     
     # Create temporary directory
     with tempfile.TemporaryDirectory() as tmpdir:
-        video_path = os.path.join(tmpdir, file.filename)
+        video_path = os.path.join(tmpdir, filename)
         audio_path = os.path.join(tmpdir, "audio.wav")
         
-        # Save uploaded video
         try:
+            # Save uploaded video
+            tasks[task_id]["message"] = "Guardando archivo..."
             with open(video_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-        except Exception:
-            raise HTTPException(status_code=500, detail="Could not save uploaded file")
-        
-        # Extract audio
-        try:
+                buffer.write(video_bytes)
+            tasks[task_id]["progress"] = 10
+            
+            # Extract audio
+            tasks[task_id]["message"] = "Extrayendo audio..."
             extract_audio(video_path, audio_path)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Audio extraction failed: {e}")
-        
-        # Transcribe
-        try:
+            tasks[task_id]["progress"] = 30
+            
+            # Transcribe
+            tasks[task_id]["message"] = "Transcribiendo (esto puede tardar)..."
+            # Note: Whisper doesn't easily give progress, so we jump to 80% after it finishes
             transcription = transcribe_audio(audio_path)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
-        
-        # Summarize
-        try:
+            tasks[task_id]["progress"] = 80
+            
+            # Summarize
+            tasks[task_id]["message"] = "Generando resúmenes..."
             summaries = summarize_with_gemini(transcription)
+            tasks[task_id]["progress"] = 100
+            
+            # Finalize
+            tasks[task_id] = {
+                "status": "completed",
+                "progress": 100,
+                "result": {
+                    "filename": filename,
+                    "transcription": transcription,
+                    "short_summary": summaries["short_summary"],
+                    "detailed_summary": summaries["detailed_summary"]
+                }
+            }
+            logger.info(f"Task {task_id} completed successfully")
+            
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Summarization failed: {e}")
+            logger.error(f"Error in task {task_id}: {e}")
+            logger.error(traceback.format_exc())
+            tasks[task_id] = {
+                "status": "failed",
+                "progress": 0,
+                "error": str(e)
+            }
+
+@app.post("/transcribe")
+async def transcribe_video(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = {"status": "pending", "progress": 0}
+    
+    # Read file content immediately to avoid closing issues in background
+    try:
+        video_bytes = await file.read()
+    except Exception as e:
+        logger.error(f"Failed to read upload: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to read upload: {e}")
         
-        # Return results
-        return JSONResponse(content={
-            "filename": file.filename,
-            "transcription": transcription,
-            "short_summary": summaries["short_summary"],
-            "detailed_summary": summaries["detailed_summary"]
-        })
+    background_tasks.add_task(process_video_task, task_id, video_bytes, file.filename)
+    
+    return {"task_id": task_id}
 
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse

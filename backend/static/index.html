@@ -233,6 +233,7 @@
             progressBar.style.width = '0%';
             progressBar.textContent = '0%';
             loading.style.display = 'block';
+            loading.textContent = 'Subiendo video...';
             errorDiv.style.display = 'none';
 
             const xhr = new XMLHttpRequest();
@@ -243,20 +244,20 @@
                 if (event.lengthComputable) {
                     const percent = Math.round((event.loaded / event.total) * 100);
                     progressBar.style.width = percent + '%';
-                    progressBar.textContent = percent + '%';
+                    progressBar.textContent = 'Subiendo: ' + percent + '%';
                 }
             };
 
             xhr.onreadystatechange = function() {
                 if (xhr.readyState === XMLHttpRequest.DONE) {
-                    progressContainer.style.display = 'none';
-                    loading.style.display = 'none';
                     if (xhr.status >= 200 && xhr.status < 300) {
                         try {
                             const data = JSON.parse(xhr.responseText);
-                            displayResults(data);
+                            pollStatus(data.task_id);
                         } catch (e) {
                             showError('Respuesta del servidor inválida', xhr.responseText);
+                            loading.style.display = 'none';
+                            progressContainer.style.display = 'none';
                         }
                     } else {
                         let errorMsg = 'Error del servidor: ' + xhr.status;
@@ -267,6 +268,8 @@
                             if (data.message) errorMsg = data.message;
                         } catch (e) {}
                         showError(errorMsg, details);
+                        loading.style.display = 'none';
+                        progressContainer.style.display = 'none';
                     }
                 }
             };
@@ -280,6 +283,39 @@
             const formData = new FormData();
             formData.append('file', file);
             xhr.send(formData);
+        }
+
+        function pollStatus(taskId) {
+            const interval = setInterval(() => {
+                fetch(`/status/${taskId}`)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Error al obtener estado');
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.status === 'processing' || data.status === 'pending') {
+                            loading.textContent = data.message || 'Procesando...';
+                            progressBar.style.width = data.progress + '%';
+                            progressBar.textContent = (data.message || 'Procesando') + ': ' + data.progress + '%';
+                        } else if (data.status === 'completed') {
+                            clearInterval(interval);
+                            progressContainer.style.display = 'none';
+                            loading.style.display = 'none';
+                            displayResults(data.result);
+                        } else if (data.status === 'failed') {
+                            clearInterval(interval);
+                            progressContainer.style.display = 'none';
+                            loading.style.display = 'none';
+                            showError('Error en el procesamiento', data.error);
+                        }
+                    })
+                    .catch(error => {
+                        clearInterval(interval);
+                        showError('Error de seguimiento', error.message);
+                        loading.style.display = 'none';
+                        progressContainer.style.display = 'none';
+                    });
+            }, 3000);
         }
 
         function displayResults(data) {
