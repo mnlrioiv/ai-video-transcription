@@ -58,7 +58,7 @@ def transcribe_audio(audio_path: str) -> str:
 
 def summarize_with_gemini(text: str):
     """Generate short and detailed summaries using Gemini."""
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     # Prompt for short summary
     short_prompt = f"""Genera un resumen conciso (máximo 3-4 oraciones) del siguiente texto:
 {text}
