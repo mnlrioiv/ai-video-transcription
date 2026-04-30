@@ -143,7 +143,8 @@
             <button class="toggle-details" id="toggleError">Mostrar detalles</button>
             <div id="errorDetails"></div>
         </div>
-        <div id="results">
+        <div id="results" style="display: none;">
+            <button id="exportPdf" style="background-color: #2196F3; margin-bottom: 20px;">📄 Exportar a PDF</button>
             <div class="result-section">
                 <h2>Transcripción completa</h2>
                 <p id="transcription"></p>
@@ -159,6 +160,7 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
@@ -173,6 +175,25 @@
         const transcriptionP = document.getElementById('transcription');
         const shortSummaryP = document.getElementById('shortSummary');
         const detailedSummaryP = document.getElementById('detailedSummary');
+        const exportPdfBtn = document.getElementById('exportPdf');
+
+        exportPdfBtn.addEventListener('click', () => {
+            const element = document.getElementById('results');
+            // Hide the button during PDF generation
+            exportPdfBtn.style.display = 'none';
+            
+            const opt = {
+                margin:       [0.5, 0.5],
+                filename:     'transcripcion_y_resumen.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2 },
+                jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+            
+            html2pdf().set(opt).from(element).save().then(() => {
+                exportPdfBtn.style.display = 'block';
+            });
+        });
 
         // Prevent default drag behaviors
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
