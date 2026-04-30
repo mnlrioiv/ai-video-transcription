@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcripción y Resumen de Videos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #dropZone {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+        }
+        #dropZone.dragover {
+            border-color: #999;
+            background-color: #f0f0f0;
+        }
+        #dropZone p {
+            margin: 0;
+            color: #666;
+        }
+        #progressContainer {
+            width: 100%;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            margin: 10px 0;
+            display: none;
+        }
+        #progressBar {
+            width: 0%;
+            height: 24px;
+            background-color: #4CAF50;
+            text-align: center;
+            line-height: 24px;
+            color: white;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: width 0.3s ease;
+        }
+        #results {
+            margin-top: 30px;
+        }
+        .result-section {
+            margin-bottom: 20px;
+        }
+        .result-section h2 {
+            color: #555;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .result-section p {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+        button {
+            display: block;
+            width: 200px;
+            margin: 20px auto;
+            padding: 12px 24px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+            color: #666;
+        }
+        #error {
+            display: none;
+            color: #d32f2f;
+            background-color: #ffebee;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        #errorDetails {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #fff3e0;
+            border-left: 4px solid #ff9800;
+            font-size: 0.9em;
+            display: none;
+        }
+        .toggle-details {
+            background: none;
+            border: none;
+            color: #1976d2;
+            text-decoration: underline;
+            cursor: pointer;
+            padding: 0;
+            font-size: 0.9em;
+        }
+        .toggle-details:hover {
+            color: #1565c0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Transcripción y Resumen de Videos</h1>
+        <p>Arrastra y suelta un archivo de video aquí o haz clic para seleccionarlo.</p>
+        <div id="dropZone">
+            <p>Arrastra tu video aquí</p>
+            <p>(Formatos soportados: .mp4, .avi, .mov, .mkv, etc.)</p>
+            <input type="file" id="fileInput" accept="video/*" style="display: none;">
+        </div>
+        <div id="progressContainer">
+            <div id="progressBar">0%</div>
+        </div>
+        <div id="loading">Procesando video...</div>
+        <div id="error">
+            <strong>Error:</strong> <span id="errorMessage"></span>
+            <button class="toggle-details" id="toggleError">Mostrar detalles</button>
+            <div id="errorDetails"></div>
+        </div>
+        <div id="results">
+            <div class="result-section">
+                <h2>Transcripción completa</h2>
+                <p id="transcription"></p>
+            </div>
+            <div class="result-section">
+                <h2>Resumen corto</h2>
+                <p id="shortSummary"></p>
+            </div>
+            <div class="result-section">
+                <h2>Resumen detallado</h2>
+                <p id="detailedSummary"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const loading = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+        const toggleError = document.getElementById('toggleError');
+        const errorDetails = document.getElementById('errorDetails');
+        const resultsDiv = document.getElementById('results');
+        const transcriptionP = document.getElementById('transcription');
+        const shortSummaryP = document.getElementById('shortSummary');
+        const detailedSummaryP = document.getElementById('detailedSummary');
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop zone when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropZone.classList.add('dragover');
+        }
+
+        function unhighlight() {
+            dropZone.classList.remove('dragover');
+        }
+
+        // Handle dropped files
+        dropZone.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', handleFileSelect, false);
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const file = dt.files[0];
+            handleFile(file);
+        }
+
+        function handleFileSelect(e) {
+            const file = fileInput.files[0];
+            handleFile(file);
+        }
+
+        function handleFile(file) {
+            if (!file) return;
+            if (!file.type.startsWith('video/')) {
+                showError('Por favor selecciona un archivo de video válido');
+                return;
+            }
+            processVideo(file);
+        }
+
+        function processVideo(file) {
+            clearResults();
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            loading.style.display = 'block';
+            errorDiv.style.display = 'none';
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/transcribe', true);
+
+            // Upload progress
+            xhr.upload.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const percent = Math.round((event.loaded / event.total) * 100);
+                    progressBar.style.width = percent + '%';
+                    progressBar.textContent = percent + '%';
+                }
+            };
+
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === XMLHttpRequest.DONE) {
+                    progressContainer.style.display = 'none';
+                    loading.style.display = 'none';
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            const data = JSON.parse(xhr.responseText);
+                            displayResults(data);
+                        } catch (e) {
+                            showError('Respuesta del servidor inválida', xhr.responseText);
+                        }
+                    } else {
+                        showError('Error del servidor: ' + xhr.status, xhr.responseText);
+                    }
+                }
+            };
+
+            xhr.onerror = function() {
+                progressContainer.style.display = 'none';
+                loading.style.display = 'none';
+                showError('Error de conexión', 'No se pudo conectar al servidor');
+            };
+
+            const formData = new FormData();
+            formData.append('file', file);
+            xhr.send(formData);
+        }
+
+        function displayResults(data) {
+            transcriptionP.textContent = data.transcription;
+            shortSummaryP.textContent = data.short_summary;
+            detailedSummaryP.textContent = data.detailed_summary;
+            resultsDiv.style.display = 'block';
+        }
+
+        function showError(message, details = '') {
+            errorMessage.textContent = message;
+            if (details) {
+                errorDetails.textContent = details;
+                toggleError.style.display = 'inline-block';
+                errorDetails.style.display = 'none'; // initially hidden
+            } else {
+                errorDetails.textContent = '';
+                toggleError.style.display = 'none';
+            }
+            errorDiv.style.display = 'block';
+        }
+
+        // Toggle error details
+        toggleError.addEventListener('click', function() {
+            if (errorDetails.style.display === 'none' || errorDetails.style.display === '') {
+                errorDetails.style.display = 'block';
+                toggleError.textContent = 'Ocultar detalles';
+            } else {
+                errorDetails.style.display = 'none';
+                toggleError.textContent = 'Mostrar detalles';
+            }
+        });
+
+        function clearResults() {
+            transcriptionP.textContent = '';
+            shortSummaryP.textContent = '';
+            detailedSummaryP.textContent = '';
+            resultsDiv.style.display = 'none';
+            progressContainer.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
