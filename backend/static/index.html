@@ -259,7 +259,14 @@
                             showError('Respuesta del servidor inválida', xhr.responseText);
                         }
                     } else {
-                        showError('Error del servidor: ' + xhr.status, xhr.responseText);
+                        let errorMsg = 'Error del servidor: ' + xhr.status;
+                        let details = xhr.responseText;
+                        try {
+                            const data = JSON.parse(xhr.responseText);
+                            if (data.detail) details = data.detail;
+                            if (data.message) errorMsg = data.message;
+                        } catch (e) {}
+                        showError(errorMsg, details);
                     }
                 }
             };

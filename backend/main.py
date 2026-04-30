@@ -8,6 +8,13 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import ffmpeg
 
+import logging
+import traceback
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
 # Configure Gemini API
@@ -21,6 +28,15 @@ genai.configure(api_key=api_key)
 model = whisper.load_model("base")
 
 app = FastAPI(title="Video Transcription & Summarization API")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.error(f"Global error: {exc}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Error interno del servidor", "detail": str(exc)}
+    )
 
 def extract_audio(video_path: str, audio_path: str):
     """Extract audio from video file to wav format using ffmpeg."""
