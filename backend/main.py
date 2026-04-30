@@ -68,7 +68,9 @@ def summarize_with_gemini(text: str):
 {text}
 """
     try:
+        import time
         short_response = model.generate_content(short_prompt)
+        time.sleep(2)  # Pequeña espera para evitar el error 429 (Too Many Requests)
         detailed_response = model.generate_content(detailed_prompt)
         return {
             "short_summary": short_response.text,
