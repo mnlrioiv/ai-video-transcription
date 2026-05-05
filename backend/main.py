@@ -53,7 +53,7 @@ def transcribe_audio(audio_path: str) -> str:
 
 def summarize_text(text: str):
     """Generate summaries using local LM Studio server."""
-    url = os.getenv("LOCAL_AI_URL", "http://127.0.0.1:1234/v1/chat/completions")
+    url = os.getenv("LOCAL_AI_URL", "http://127.0.0.1:12340/v1/chat/completions")
     headers = {"Content-Type": "application/json"}
     
     short_prompt = f"Genera un resumen conciso (máximo 3-4 oraciones) del siguiente texto:\n{text}"
