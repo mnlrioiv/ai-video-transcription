@@ -7,6 +7,8 @@ import whisper
 import google.generativeai as genai
 from dotenv import load_dotenv
 import ffmpeg
+import json
+import urllib.request
 
 import logging
 import traceback
@@ -77,7 +79,41 @@ def summarize_with_gemini(text: str):
             "detailed_summary": detailed_response.text
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API error: {e}")
+        logger.error(f"Gemini API error: {e}")
+        raise e
+
+def summarize_with_local_server(text: str):
+    """Generate summaries using local LM Studio server (Gemma) as a fallback."""
+    url = os.getenv("LOCAL_AI_URL", "http://localhost:1234/v1/chat/completions")
+    headers = {"Content-Type": "application/json"}
+    
+    short_prompt = f"Genera un resumen conciso (máximo 3-4 oraciones) del siguiente texto:\n{text}"
+    detailed_prompt = f"Genera un resumen detallado que capture los puntos principales, ejemplos y conclusiones del siguiente texto:\n{text}"
+    
+    def fetch_from_local(prompt):
+        data = {
+            "model": "gemma",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7
+        }
+        req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
+        try:
+            with urllib.request.urlopen(req, timeout=180) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                return result["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.error(f"Error calling local server: {e}")
+            raise e
+
+    try:
+        short_summary = fetch_from_local(short_prompt)
+        detailed_summary = fetch_from_local(detailed_prompt)
+        return {
+            "short_summary": short_summary,
+            "detailed_summary": detailed_summary
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ambas APIs (Gemini y Local) fallaron. Error: {e}")
 
 import uuid
 from fastapi import BackgroundTasks
@@ -119,7 +155,12 @@ async def process_video_task(task_id: str, video_bytes: bytes, filename: str):
             
             # Summarize
             tasks[task_id]["message"] = "Generando resúmenes..."
-            summaries = summarize_with_gemini(transcription)
+            try:
+                summaries = summarize_with_gemini(transcription)
+            except Exception as e:
+                logger.warning(f"Gemini falló: {e}. Intentando con servidor local (LM Studio)...")
+                tasks[task_id]["message"] = "Gemini falló, intentando con servidor local..."
+                summaries = summarize_with_local_server(transcription)
             tasks[task_id]["progress"] = 100
             
             # Finalize
