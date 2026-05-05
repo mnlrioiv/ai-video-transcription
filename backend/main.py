@@ -185,7 +185,7 @@ async def health():
 
 @app.get("/test-ai")
 async def test_ai():
-    url = os.getenv("LOCAL_AI_URL", "http://127.0.0.1:1234/v1/chat/completions")
+    url = os.getenv("LOCAL_AI_URL", "http://127.0.0.1:12340/v1/chat/completions")
     headers = {"Content-Type": "application/json"}
     data = {
         "model": "local-model",
