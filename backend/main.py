@@ -4,7 +4,6 @@ import shutil
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 import whisper
-import google.generativeai as genai
 from dotenv import load_dotenv
 import ffmpeg
 import json
@@ -18,12 +17,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-
-# Configure Gemini API
-api_key = os.getenv("GOOGLE_API_KEY")
-if not api_key:
-    raise ValueError("GOOGLE_API_KEY environment variable not set")
-genai.configure(api_key=api_key)
 
 # Load Whisper model (choose base, small, medium, large)
 # For MVP we can use "base" for speed/accuracy tradeoff
@@ -58,32 +51,8 @@ def transcribe_audio(audio_path: str) -> str:
     result = model.transcribe(audio_path)
     return result["text"]
 
-def summarize_with_gemini(text: str):
-    """Generate short and detailed summaries using Gemini."""
-    model = genai.GenerativeModel('gemini-2.5-flash')
-    # Prompt for short summary
-    short_prompt = f"""Genera un resumen conciso (máximo 3-4 oraciones) del siguiente texto:
-{text}
-"""
-    # Prompt for detailed summary
-    detailed_prompt = f"""Genera un resumen detallado que capture los puntos principales, ejemplos y conclusiones del siguiente texto:
-{text}
-"""
-    try:
-        import time
-        short_response = model.generate_content(short_prompt)
-        time.sleep(2)  # Pequeña espera para evitar el error 429 (Too Many Requests)
-        detailed_response = model.generate_content(detailed_prompt)
-        return {
-            "short_summary": short_response.text,
-            "detailed_summary": detailed_response.text
-        }
-    except Exception as e:
-        logger.error(f"Gemini API error: {e}")
-        raise e
-
-def summarize_with_local_server(text: str):
-    """Generate summaries using local LM Studio server (Gemma) as a fallback."""
+def summarize_text(text: str):
+    """Generate summaries using local LM Studio server."""
     url = os.getenv("LOCAL_AI_URL", "http://localhost:1234/v1/chat/completions")
     headers = {"Content-Type": "application/json"}
     
@@ -113,7 +82,7 @@ def summarize_with_local_server(text: str):
             "detailed_summary": detailed_summary
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ambas APIs (Gemini y Local) fallaron. Error: {e}")
+        raise HTTPException(status_code=500, detail=f"El servidor local de IA falló al conectar a {url}. Error: {e}")
 
 import uuid
 from fastapi import BackgroundTasks
@@ -154,13 +123,8 @@ async def process_video_task(task_id: str, video_bytes: bytes, filename: str):
             tasks[task_id]["progress"] = 80
             
             # Summarize
-            tasks[task_id]["message"] = "Generando resúmenes..."
-            try:
-                summaries = summarize_with_gemini(transcription)
-            except Exception as e:
-                logger.warning(f"Gemini falló: {e}. Intentando con servidor local (LM Studio)...")
-                tasks[task_id]["message"] = "Gemini falló, intentando con servidor local..."
-                summaries = summarize_with_local_server(transcription)
+            tasks[task_id]["message"] = "Generando resúmenes en servidor local..."
+            summaries = summarize_text(transcription)
             tasks[task_id]["progress"] = 100
             
             # Finalize
@@ -218,3 +182,20 @@ async def read_index():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+@app.get("/test-ai")
+async def test_ai():
+    url = os.getenv("LOCAL_AI_URL", "http://127.0.0.1:1234/v1/chat/completions")
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "model": "local-model",
+        "messages": [{"role": "user", "content": "Responde con la palabra 'OK'."}],
+        "max_tokens": 10
+    }
+    req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            return {"status": "success", "url": url, "response": result["choices"][0]["message"]["content"]}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "url": url, "error": str(e)})
