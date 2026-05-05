@@ -67,7 +67,7 @@ def summarize_text(text: str):
         }
         req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
         try:
-            with urllib.request.urlopen(req, timeout=180) as response:
+            with urllib.request.urlopen(req, timeout=1200) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 return result["choices"][0]["message"]["content"]
         except Exception as e:
